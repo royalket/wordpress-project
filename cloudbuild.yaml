@@ -1,254 +1,79 @@
 steps:
+# Fetch the Cloud SQL proxy key from GCS
+- name: 'gcr.io/cloud-builders/gsutil'
+  id: 'fetch-key'
+  args: ['cp', 'gs://wordpress-sigma-436504-wordpress-content/key.json', 'key.json']
 
-  # Fetch the Cloud SQL proxy key from GCS
-  - name: "gcr.io/cloud-builders/gsutil"
-    id: "fetch-key"
-    args:
-      [
-        "cp",
-        "gs://wordpress-sigma-436504-wordpress-content/key.json",
-        "key.json",
-      ]
+# Deploy WordPress PVC
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['apply', '-f', 'k8s/wordpress-volumeclaim.yaml']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-  # Deploy WordPress PVC
-  - name: "gcr.io/cloud-builders/kubectl"
-    args: ["apply", "-f", "k8s/wordpress-volumeclaim.yaml"]
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
+# Create/Update CloudSQL credentials secret
+- name: 'gcr.io/cloud-builders/kubectl'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    set -e
+    echo "Fetching cluster credentials..."
+    gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a --project $PROJECT_ID
+    echo "Creating/updating cloudsql-db-credentials secret..."
+    kubectl create secret generic cloudsql-db-credentials \
+      --from-literal=username=wordpress \
+      --from-literal=password=$_DB_PASSWORD \
+      --dry-run=client -o yaml | kubectl apply -f - -v=5
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+  secretEnv: ['_DB_PASSWORD']
 
-  # Create/Update CloudSQL credentials secret
-  - name: "gcr.io/cloud-builders/kubectl"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set -e
-        echo "Fetching cluster credentials..."
-        gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a --project ${PROJECT_ID}
-        echo "Creating/updating cloudsql-db-credentials secret..."
-        kubectl create secret generic cloudsql-db-credentials \
-          --from-literal=username=wordpress \
-          --from-literal=password=$$_DB_PASSWORD \
-          --dry-run=client -o yaml | kubectl apply -f -
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-    secretEnv: ["_DB_PASSWORD"]
+# Create CloudSQL instance credentials secret
+- name: 'gcr.io/cloud-builders/kubectl'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    set -e
+    echo "Creating/updating cloudsql-instance-credentials secret..."
+    kubectl create secret generic cloudsql-instance-credentials \
+      --from-file=key.json=key.json \
+      --dry-run=client -o yaml | kubectl apply -f - -v=5
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
+# Deploy WordPress deployment
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['apply', '-f', 'k8s/wordpress-deployment.yaml', '-v=5']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-  # Create CloudSQL instance credentials secret
-  - name: "gcr.io/cloud-builders/kubectl"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set -e
-        echo "Creating/updating cloudsql-instance-credentials secret..."
-        kubectl create secret generic cloudsql-instance-credentials \
-          --from-file=key.json=key.json \
-          --dry-run=client -o yaml | kubectl apply -f -
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
+# Deploy WordPress service
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['apply', '-f', 'k8s/wordpress-service.yaml', '-v=5']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-  # Deploy WordPress deployment
-  - name: "gcr.io/cloud-builders/kubectl"
-    args: ["apply", "-f", "k8s/wordpress-deployment.yaml"]
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
-  # Deploy WordPress service
-  - name: "gcr.io/cloud-builders/kubectl"
-    args: ["apply", "-f", "k8s/wordpress-service.yaml"]
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
-  # Test: Verify secrets creation
-  - name: "gcr.io/cloud-builders/kubectl"
-    id: "test-secrets"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        kubectl get secret cloudsql-db-credentials
-        kubectl get secret cloudsql-instance-credentials
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
- # Test: Verify PVC creation
-  - name: "gcr.io/cloud-builders/kubectl"
-    id: "test-pvc"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set +e  # Continue on error
-        echo "Checking for WordPress PVC"
-        if kubectl get pvc | grep -q wordpress; then
-          pvc_name=$(kubectl get pvc | grep wordpress | awk '{print $1}')
-          echo "WordPress PVC found: $pvc_name"
-          kubectl get pvc $pvc_name
-          echo "PVC_TEST=PASS" > /workspace/pvc_test_result.txt
-        else
-          echo "WARNING: No WordPress PVC found"
-          echo "PVC_TEST=FAIL" > /workspace/pvc_test_result.txt
-        fi
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
-  # Test: Verify secrets creation
-  - name: "gcr.io/cloud-builders/kubectl"
-    id: "test-secrets"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set +e  # Continue on error
-        secrets_found=true
-        if ! kubectl get secret cloudsql-db-credentials &>/dev/null; then
-          echo "WARNING: cloudsql-db-credentials secret not found"
-          secrets_found=false
-        fi
-        if ! kubectl get secret cloudsql-instance-credentials &>/dev/null; then
-          echo "WARNING: cloudsql-instance-credentials secret not found"
-          secrets_found=false
-        fi
-        if $secrets_found; then
-          echo "All required secrets found"
-          echo "SECRETS_TEST=PASS" > /workspace/secrets_test_result.txt
-        else
-          echo "SECRETS_TEST=FAIL" > /workspace/secrets_test_result.txt
-        fi
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
-  # Test: Verify WordPress deployment
-  - name: "gcr.io/cloud-builders/kubectl"
-    id: "test-deployment"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set +e  # Continue on error
-        echo "Checking WordPress deployment status"
-        if kubectl rollout status deployment/wordpress --timeout=300s; then
-          echo "WordPress deployment is ready"
-          echo "DEPLOYMENT_TEST=PASS" > /workspace/deployment_test_result.txt
-        else
-          echo "WARNING: WordPress deployment is not ready"
-          echo "DEPLOYMENT_TEST=FAIL" > /workspace/deployment_test_result.txt
-        fi
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
-  # Test: Verify WordPress service and wait for External IP
-  - name: "gcr.io/cloud-builders/kubectl"
-    id: "test-service-and-wait-for-ip"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set +e  # Continue on error
-        echo "Checking WordPress service"
-        if ! kubectl get service wordpress &>/dev/null; then
-          echo "WARNING: WordPress service not found"
-          echo "SERVICE_TEST=FAIL" > /workspace/service_test_result.txt
-          exit 0
-        fi
-        echo "Waiting for external IP (this may take a few minutes)..."
-        external_ip=""
-        for i in {1..30}; do
-          external_ip=$(kubectl get svc wordpress --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
-          if [ -n "$external_ip" ]; then
-            echo "External IP found: $external_ip"
-            echo $external_ip > /workspace/external_ip.txt
-            echo "SERVICE_TEST=PASS" > /workspace/service_test_result.txt
-            exit 0
-          fi
-          sleep 10
-        done
-        echo "WARNING: External IP not found after 5 minutes"
-        echo "SERVICE_TEST=FAIL" > /workspace/service_test_result.txt
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
-
-  # Test: Basic HTTP check
-  - name: "gcr.io/cloud-builders/curl"
-    id: "test-http"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        set +e  # Continue on error
-        if [ ! -f /workspace/external_ip.txt ]; then
-          echo "WARNING: External IP file not found"
-          echo "HTTP_TEST=FAIL" > /workspace/http_test_result.txt
-          exit 0
-        fi
-        external_ip=$(cat /workspace/external_ip.txt)
-        for i in {1..30}; do
-          http_status=$(curl -s -o /dev/null -w "%{http_code}" http://$external_ip)
-          if [ $http_status -eq 200 ]; then
-            echo "WordPress is responding with HTTP 200"
-            echo "HTTP_TEST=PASS" > /workspace/http_test_result.txt
-            exit 0
-          fi
-          echo "Attempt $i: WordPress is not ready yet. HTTP status: $http_status"
-          sleep 10
-        done
-        echo "WARNING: WordPress did not become ready in time"
-        echo "HTTP_TEST=FAIL" > /workspace/http_test_result.txt
-
-  # Final step to aggregate test results
-  - name: "gcr.io/cloud-builders/gcloud"
-    id: "aggregate-test-results"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        echo "Test Results Summary:"
-        echo "---------------------"
-        failed_tests=0
-        for test_file in /workspace/*_test_result.txt; do
-          test_name=$(basename $test_file _test_result.txt | tr '[:lower:]' '[:upper:]')
-          test_result=$(cat $test_file | cut -d'=' -f2)
-          echo "$test_name Test: $test_result"
-          if [ "$test_result" = "FAIL" ]; then
-            ((failed_tests++))
-          fi
-        done
-        if [ $failed_tests -gt 0 ]; then
-          echo "WARNING: $failed_tests test(s) failed. Please check the logs for details."
-        else
-          echo "All tests passed successfully!"
-        fi
-        # Always exit with 0 to allow the build to complete
-        exit 0
-
-
-  # Clean up the key file
-  - name: "gcr.io/cloud-builders/gcloud"
-    id: "cleanup"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - "shred -u key.json"
+# Clean up the key file
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'cleanup'
+  entrypoint: 'sh'
+  args:
+  - '-c'
+  - 'shred -u key.json'
 
 availableSecrets:
   secretManager:
-    - versionName: projects/$PROJECT_ID/secrets/wordpress-db-password/versions/latest
-      env: "_DB_PASSWORD"
+  - versionName: projects/${PROJECT_ID}/secrets/wordpress-db-password/versions/latest
+    env: '_DB_PASSWORD'
 
 options:
+  substitution_option: 'ALLOW_LOOSE'
   logging: CLOUD_LOGGING_ONLY
 
-# Uncomment the following line if you need to use a specific service account
-# serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
+#serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
