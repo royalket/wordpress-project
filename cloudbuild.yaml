@@ -59,10 +59,8 @@ steps:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-#  test steps:
-
 # Test: Verify PVC creation
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-pvc'
   entrypoint: 'bash'
   args:
@@ -80,7 +78,7 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Verify secrets creation
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-secrets'
   entrypoint: 'bash'
   args:
@@ -99,7 +97,7 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Verify WordPress deployment
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-deployment'
   entrypoint: 'bash'
   args:
@@ -117,7 +115,7 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Verify WordPress service
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-service'
   entrypoint: 'bash'
   args:
@@ -142,7 +140,7 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Basic HTTP check
-name: 'gcr.io/cloud-builders/curl'
+- name: 'gcr.io/cloud-builders/curl'
   id: 'test-http'
   entrypoint: 'bash'
   args:
