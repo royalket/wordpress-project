@@ -1,4 +1,5 @@
 steps:
+
   # Fetch the Cloud SQL proxy key from GCS
   - name: "gcr.io/cloud-builders/gsutil"
     id: "fetch-key"
@@ -24,7 +25,7 @@ steps:
       - |
         set -e
         echo "Fetching cluster credentials..."
-        gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a --project $$PROJECT_ID
+        gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a --project ${PROJECT_ID}
         echo "Creating/updating cloudsql-db-credentials secret..."
         kubectl create secret generic cloudsql-db-credentials \
           --from-literal=username=wordpress \
@@ -34,6 +35,7 @@ steps:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
     secretEnv: ["_DB_PASSWORD"]
+
 
   # Create CloudSQL instance credentials secret
   - name: "gcr.io/cloud-builders/kubectl"
