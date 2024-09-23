@@ -29,8 +29,8 @@ This project sets up a WordPress installation on Google Kubernetes Engine (GKE) 
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
-cd <your-repo-name>
+git clone https://github.com/royalket/wordpress-project.git
+cd wordpress-project
 ```
 
 ### 2. Set Up Terraform
@@ -53,6 +53,7 @@ cd <your-repo-name>
    ```bash
    terraform plan -out=tfplan
    ```
+   It will ask for project id and Password for DB
 
 5. Apply the Terraform plan:
    ```bash
@@ -70,7 +71,7 @@ cd <your-repo-name>
 After Terraform creates the GKE cluster, configure kubectl:
 
 ```bash
-gcloud container clusters get-credentials <your-cluster-name> --zone <your-zone> --project <your-project-id>
+gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a --project wordpress-sigma-436504
 ```
 
 ### 4. Prepare Kubernetes Manifests
@@ -81,9 +82,9 @@ gcloud container clusters get-credentials <your-cluster-name> --zone <your-zone>
    ```
 
 2. Update `wordpress-deployment.yaml`:
-   - Replace `${INSTANCE_CONNECTION_NAME}` with the `cloudsql_connection_name` from Terraform output
+   - Replace `${INSTANCE_CONNECTION_NAME}` with the `cloudsql_connection_name` from Terraform output you got above
 
-3. (Optional) Adjust `wordpress-volumeclaim.yaml` if you need to change the storage size
+3.  Adjust `wordpress-volumeclaim.yaml` if you need to change the storage size
 
 ### 5. Set Up Cloud Build
 
@@ -99,17 +100,11 @@ gcloud container clusters get-credentials <your-cluster-name> --zone <your-zone>
    - Configure the trigger to run on pushes to your desired branch
    - Use the `cloudbuild.yaml` file in the root of your repository
 
-4. Set up Cloud Build variables:
-   - In the Cloud Build trigger settings, add the following substitution variables:
-     - `_ZONE`: Your GKE cluster zone
-     - `_CLUSTER_NAME`: Your GKE cluster name
-     - `_DB_PASSWORD`: The WordPress database password (use a secure method to manage this)
+4. Set up Cloud Build variables
 
 5. Set up the CloudSQL proxy key:
-   - Create a new Cloud Storage bucket to store the key securely
-   - Upload the `cloudsql_proxy_key` (from Terraform output) to this bucket
-   - Update the `_CLOUDSQL_KEY_PATH` in `cloudbuild.yaml` to point to this file in your bucket
-
+   terraform output -raw cloudsql_proxy_key | base64 --decode > key.json
+   `by running that you will get a key paste that in the bucket. it will be used later to access the DB
 ### 6. Initial Deployment
 
 1. Commit and push your changes:
@@ -120,6 +115,10 @@ gcloud container clusters get-credentials <your-cluster-name> --zone <your-zone>
    ```
 
 2. This should trigger the Cloud Build pipeline. Monitor the build in the GCP Console.
+3. ![Completion Image ]({650F9A2A-86F9-4992-93EF-D4BA419FCB87}-1.png)
+4. [GKE]({CBA0AD52-8701-42CC-A047-DEBF823AAE06}.png)
+5. ![Cloud SQL]({F3AA3B43-D1D4-4D71-9020-42EC53A9886F}.png)
+6. ![Buckets]({9B4FAFBC-855E-4E1F-A7AB-A5A9A722C918}.png)
 
 ### 7. Access WordPress
 
@@ -153,10 +152,88 @@ gcloud container clusters get-credentials <your-cluster-name> --zone <your-zone>
 - Use `kubectl logs` and `kubectl describe` for debugging Kubernetes resources
 - Verify Cloud SQL connectivity using the Cloud SQL proxy
 
-## Contributing
+## Test to add in the CI/CD
+ # Test: Verify secrets creation
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-secrets"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        kubectl get secret cloudsql-db-credentials
+        kubectl get secret cloudsql-instance-credentials
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
-[Add your contributing guidelines here]
+  # Test: Verify PVC creation
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-pvc"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        kubectl get pvc wordpress-persistent-storage
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
-## License
+  # Test: Verify WordPress deployment
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-deployment"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        kubectl rollout status deployment/wordpress --timeout=300s
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
-[Add your license information here]
+  # Test: Verify WordPress service and wait for External IP
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-service-and-wait-for-ip"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        kubectl get service wordpress
+        echo "Waiting for external IP (this may take a few minutes)..."
+        external_ip=""
+        while [ -z $external_ip ]; do
+          echo "Waiting for end point..."
+          external_ip=$(kubectl get svc wordpress --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
+          [ -z "$external_ip" ] && sleep 10
+        done
+        echo "End point ready: $external_ip"
+        echo $external_ip > /workspace/external_ip.txt
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
+
+  # Test: Basic HTTP check
+  - name: "gcr.io/cloud-builders/curl"
+    id: "test-http"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        if [ ! -f /workspace/external_ip.txt ]; then
+          echo "External IP file not found"
+          exit 1
+        fi
+        external_ip=$(cat /workspace/external_ip.txt)
+        for i in {1..30}; do
+          http_status=$(curl -s -o /dev/null -w "%{http_code}" http://$external_ip)
+          if [ $http_status -eq 200 ]; then
+            echo "WordPress is responding with HTTP 200"
+            exit 0
+          fi
+          echo "Attempt $i: WordPress is not ready yet. HTTP status: $http_status"
+          sleep 10
+        done
+        echo "WordPress did not become ready in time"
+        exit 1
+
+
+        
