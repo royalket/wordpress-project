@@ -1,0 +1,62 @@
+# cloudbuild.yaml
+
+steps:
+# Deploy WordPress PVC
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['apply', '-f', 'k8s/wordpress-volumeclaim.yaml']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+# Create CloudSQL credentials secret
+- name: 'gcr.io/cloud-builders/kubectl'
+  args:
+  - 'create'
+  - 'secret'
+  - 'generic'
+  - 'cloudsql-db-credentials'
+  - '--from-literal=username=wordpress'
+  - '--from-literal=password=${_DB_PASSWORD}'
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+# Create CloudSQL instance credentials secret
+- name: 'gcr.io/cloud-builders/kubectl'
+  args:
+  - 'create'
+  - 'secret'
+  - 'generic'
+  - 'cloudsql-instance-credentials'
+  - '--from-file=key.json=${_CLOUDSQL_KEY_PATH}'
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+# Deploy WordPress deployment
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['apply', '-f', 'k8s/wordpress-deployment.yaml']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+# Deploy WordPress service
+- name: 'gcr.io/cloud-builders/kubectl'
+  args: ['apply', '-f', 'k8s/wordpress-service.yaml']
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+
+substitutions:
+  _ZONE: us-central1-a
+  _CLUSTER_NAME: wordpress-cluster
+  _DB_PASSWORD: ${DB_PASSWORD}
+  _CLOUDSQL_KEY_PATH: /path/to/cloudsql/key.json
+
+options:
+  substitution_option: 'ALLOW_LOOSE'
+
+  #bucket
+options:
+  logging: GCS_ONLY
+logsBucket: 'gs://wordpress-project-sigma'
