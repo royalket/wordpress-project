@@ -59,6 +59,111 @@ steps:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
+#  test steps:
+
+# Test: Verify PVC creation
+name: 'gcr.io/cloud-builders/kubectl'
+  id: 'test-pvc'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    kubectl get pvc wordpress-persistent-storage
+    if [ $? -eq 0 ]; then
+      echo "PVC exists"
+    else
+      echo "PVC does not exist"
+      exit 1
+    fi
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+
+# Test: Verify secrets creation
+name: 'gcr.io/cloud-builders/kubectl'
+  id: 'test-secrets'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    kubectl get secret cloudsql-db-credentials
+    kubectl get secret cloudsql-instance-credentials
+    if [ $? -eq 0 ]; then
+      echo "Secrets exist"
+    else
+      echo "Secrets do not exist"
+      exit 1
+    fi
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+
+# Test: Verify WordPress deployment
+name: 'gcr.io/cloud-builders/kubectl'
+  id: 'test-deployment'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    kubectl rollout status deployment/wordpress --timeout=300s
+    if [ $? -eq 0 ]; then
+      echo "Deployment successful"
+    else
+      echo "Deployment failed"
+      exit 1
+    fi
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+
+# Test: Verify WordPress service
+name: 'gcr.io/cloud-builders/kubectl'
+  id: 'test-service'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    kubectl get service wordpress
+    if [ $? -eq 0 ]; then
+      echo "Service exists"
+      EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+      if [ -z "$EXTERNAL_IP" ]; then
+        echo "External IP not yet assigned"
+        exit 1
+      else
+        echo "External IP: $EXTERNAL_IP"
+      fi
+    else
+      echo "Service does not exist"
+      exit 1
+    fi
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+
+# Test: Basic HTTP check
+name: 'gcr.io/cloud-builders/curl'
+  id: 'test-http'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+    for i in {1..30}; do
+      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP)
+      if [ $HTTP_STATUS -eq 200 ]; then
+        echo "WordPress is responding with HTTP 200"
+        exit 0
+      fi
+      echo "Attempt $i: WordPress is not ready yet. HTTP status: $HTTP_STATUS"
+      sleep 10
+    done
+    echo "WordPress did not become ready in time"
+    exit 1
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+
 # Clean up the key file
 - name: 'gcr.io/cloud-builders/gcloud'
   id: 'cleanup'
