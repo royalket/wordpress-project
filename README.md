@@ -115,10 +115,11 @@ gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a
    ```
 
 2. This should trigger the Cloud Build pipeline. Monitor the build in the GCP Console.
-3. ![Completion Image ]({650F9A2A-86F9-4992-93EF-D4BA419FCB87}-1.png)
+3. [Completion Image ]({650F9A2A-86F9-4992-93EF-D4BA419FCB87}-1.png)
 4. [GKE]({CBA0AD52-8701-42CC-A047-DEBF823AAE06}.png)
-5. ![Cloud SQL]({F3AA3B43-D1D4-4D71-9020-42EC53A9886F}.png)
-6. ![Buckets]({9B4FAFBC-855E-4E1F-A7AB-A5A9A722C918}.png)
+5. [Cloud SQL]({F3AA3B43-D1D4-4D71-9020-42EC53A9886F}.png)
+6. [Buckets]({9B4FAFBC-855E-4E1F-A7AB-A5A9A722C918}.png)
+7. [k8s services]({3345D72F-811F-4B85-A072-77B7BD48AD0E}.png)
 
 ### 7. Access WordPress
 
@@ -236,4 +237,5 @@ gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a
         exit 1
 
 
-        
+## same can be deployed using compute engine(EC2) and cloud SQL 
+Code is available in compute+Sql folder with readme
