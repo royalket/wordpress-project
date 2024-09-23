@@ -11,22 +11,20 @@ steps:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
+# Create/Update CloudSQL credentials secret
 - name: 'gcr.io/cloud-builders/kubectl'
+  entrypoint: 'bash'
   args:
-  - 'create'
-  - 'secret'
-  - 'generic'
-  - 'cloudsql-db-credentials'
-  - '--from-literal=username=wordpress'
-  - '--from-literal=password=$_DB_PASSWORD'
-  - '--dry-run=client'
-  - '-o'
-  - 'yaml'
-  - '|'
-  - 'kubectl'
-  - 'apply'
-  - '-f'
-  - '-'
+  - '-c'
+  - |
+    set -e
+    echo "Fetching cluster credentials..."
+    gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a --project $PROJECT_ID
+    echo "Creating/updating cloudsql-db-credentials secret..."
+    kubectl create secret generic cloudsql-db-credentials \
+      --from-literal=username=wordpress \
+      --from-literal=password=$_DB_PASSWORD \
+      --dry-run=client -o yaml | kubectl apply -f - -v=5
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
@@ -34,26 +32,29 @@ steps:
 
 # Create CloudSQL instance credentials secret
 - name: 'gcr.io/cloud-builders/kubectl'
+  entrypoint: 'bash'
   args:
-  - 'create'
-  - 'secret'
-  - 'generic'
-  - 'cloudsql-instance-credentials'
-  - '--from-file=key.json=key.json'
+  - '-c'
+  - |
+    set -e
+    echo "Creating/updating cloudsql-instance-credentials secret..."
+    kubectl create secret generic cloudsql-instance-credentials \
+      --from-file=key.json=key.json \
+      --dry-run=client -o yaml | kubectl apply -f - -v=5
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Deploy WordPress deployment
 - name: 'gcr.io/cloud-builders/kubectl'
-  args: ['apply', '-f', 'k8s/wordpress-deployment.yaml']
+  args: ['apply', '-f', 'k8s/wordpress-deployment.yaml', '-v=5']
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Deploy WordPress service
 - name: 'gcr.io/cloud-builders/kubectl'
-  args: ['apply', '-f', 'k8s/wordpress-service.yaml']
+  args: ['apply', '-f', 'k8s/wordpress-service.yaml', '-v=5']
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
@@ -74,6 +75,5 @@ availableSecrets:
 options:
   substitution_option: 'ALLOW_LOOSE'
   logging: CLOUD_LOGGING_ONLY
-
 
 #serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
