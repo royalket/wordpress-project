@@ -19,10 +19,11 @@ steps:
   - 'generic'
   - 'cloudsql-db-credentials'
   - '--from-literal=username=wordpress'
-  - '--from-literal=password=${_DB_PASSWORD}'
+  - '--from-literal=password=$_DB_PASSWORD'
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+  secretEnv: ['_DB_PASSWORD']
 
 # Create CloudSQL instance credentials secret
 - name: 'gcr.io/cloud-builders/kubectl'
