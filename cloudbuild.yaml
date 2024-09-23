@@ -59,10 +59,8 @@ steps:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-# New test steps:
-
 # Test: Verify PVC creation
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-pvc'
   entrypoint: 'bash'
   args:
@@ -80,7 +78,7 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Verify secrets creation
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-secrets'
   entrypoint: 'bash'
   args:
@@ -99,7 +97,7 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Verify WordPress deployment
-name: 'gcr.io/cloud-builders/kubectl'
+- name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-deployment'
   entrypoint: 'bash'
   args:
@@ -116,9 +114,9 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-# Test: Verify WordPress service
-name: 'gcr.io/cloud-builders/kubectl'
-  id: 'test-service'
+# Test: Verify WordPress service and get External IP
+- name: 'gcr.io/cloud-builders/kubectl'
+  id: 'test-service-and-get-ip'
   entrypoint: 'bash'
   args:
   - '-c'
@@ -126,13 +124,18 @@ name: 'gcr.io/cloud-builders/kubectl'
     kubectl get service wordpress
     if [ $? -eq 0 ]; then
       echo "Service exists"
-      EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
-      if [ -z "$EXTERNAL_IP" ]; then
-        echo "External IP not yet assigned"
-        exit 1
-      else
-        echo "External IP: $EXTERNAL_IP"
-      fi
+      for i in {1..30}; do
+        EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+        if [ -n "$EXTERNAL_IP" ]; then
+          echo "External IP: $EXTERNAL_IP"
+          echo $EXTERNAL_IP > /workspace/external_ip.txt
+          exit 0
+        fi
+        echo "Waiting for external IP... (Attempt $i)"
+        sleep 10
+      done
+      echo "External IP not assigned within timeout"
+      exit 1
     else
       echo "Service does not exist"
       exit 1
@@ -142,13 +145,13 @@ name: 'gcr.io/cloud-builders/kubectl'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Test: Basic HTTP check
-name: 'gcr.io/cloud-builders/curl'
+- name: 'gcr.io/cloud-builders/curl'
   id: 'test-http'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
-    EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+    EXTERNAL_IP=$(cat /workspace/external_ip.txt)
     for i in {1..30}; do
       HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP)
       if [ $HTTP_STATUS -eq 200 ]; then
@@ -181,4 +184,5 @@ options:
   substitution_option: 'ALLOW_LOOSE'
   logging: CLOUD_LOGGING_ONLY
 
-#serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
+# serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
+
