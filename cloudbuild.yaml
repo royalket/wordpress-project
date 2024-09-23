@@ -66,4 +66,4 @@ availableSecrets:
 options:
   substitution_option: 'ALLOW_LOOSE'
   logging: GCS_ONLY
-  logsBucket: 'gs://wordpress-project-sigma'
+  #logsBucket: 'gs://wordpress-project-sigma'
