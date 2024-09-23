@@ -11,7 +11,6 @@ steps:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
-# Create CloudSQL credentials secret
 - name: 'gcr.io/cloud-builders/kubectl'
   args:
   - 'create'
@@ -20,6 +19,14 @@ steps:
   - 'cloudsql-db-credentials'
   - '--from-literal=username=wordpress'
   - '--from-literal=password=$_DB_PASSWORD'
+  - '--dry-run=client'
+  - '-o'
+  - 'yaml'
+  - '|'
+  - 'kubectl'
+  - 'apply'
+  - '-f'
+  - '-'
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
@@ -67,5 +74,6 @@ availableSecrets:
 options:
   substitution_option: 'ALLOW_LOOSE'
   logging: CLOUD_LOGGING_ONLY
+
 
 #serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
