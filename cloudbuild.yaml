@@ -65,8 +65,6 @@ availableSecrets:
 
 options:
   substitution_option: 'ALLOW_LOOSE'
-  logging: GCS_ONLY
-  logsBucket: 'gs://wordpress-project-sigma'
 
 # If you're using a custom service account, uncomment and fill in the following line:
 # serviceAccount: 'projects/${PROJECT_ID}/serviceAccounts/your-service-account@your-project.iam.gserviceaccount.com'
