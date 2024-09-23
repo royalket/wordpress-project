@@ -1,21 +1,27 @@
 steps:
   # Fetch the Cloud SQL proxy key from GCS
-  - name: 'gcr.io/cloud-builders/gsutil'
-    id: 'fetch-key'
-    args: ['cp', 'gs://wordpress-sigma-436504-wordpress-content/key.json', 'key.json']
+  - name: "gcr.io/cloud-builders/gsutil"
+    id: "fetch-key"
+    args:
+      [
+        "cp",
+        "gs://wordpress-sigma-436504-wordpress-content/key.json",
+        "key.json",
+      ]
 
   # Deploy WordPress PVC
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args: ['apply', '-f', 'k8s/wordpress-volumeclaim.yaml']
+  - name: "gcr.io/cloud-builders/kubectl"
+    args: ["apply", "-f", "k8s/wordpress-volumeclaim.yaml"]
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
-  # Create/Update CloudSQL credentials secret
-  - name: 'gcr.io/cloud-builders/kubectl'
-    entrypoint: 'bash'
+
+  # # Create/Update CloudSQL credentials secret
+  - name: "gcr.io/cloud-builders/kubectl"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         set -e
         echo "Fetching cluster credentials..."
@@ -26,15 +32,15 @@ steps:
           --from-literal=password=$_DB_PASSWORD \
           --dry-run=client -o yaml | kubectl apply -f - -v=5
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
-    secretEnv: ['_DB_PASSWORD']
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
+    secretEnv: ["_DB_PASSWORD"]
 
   # Create CloudSQL instance credentials secret
-  - name: 'gcr.io/cloud-builders/kubectl'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/kubectl"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         set -e
         echo "Creating/updating cloudsql-instance-credentials secret..."
@@ -42,29 +48,29 @@ steps:
           --from-file=key.json=key.json \
           --dry-run=client -o yaml | kubectl apply -f - -v=5
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Deploy WordPress deployment
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args: ['apply', '-f', 'k8s/wordpress-deployment.yaml', '-v=5']
+  - name: "gcr.io/cloud-builders/kubectl"
+    args: ["apply", "-f", "k8s/wordpress-deployment.yaml", "-v=5"]
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Deploy WordPress service
-  - name: 'gcr.io/cloud-builders/kubectl'
-    args: ['apply', '-f', 'k8s/wordpress-service.yaml', '-v=5']
+  - name: "gcr.io/cloud-builders/kubectl"
+    args: ["apply", "-f", "k8s/wordpress-service.yaml", "-v=5"]
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Test: Verify secrets creation
-  - name: 'gcr.io/cloud-builders/kubectl'
-    id: 'test-secrets'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-secrets"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         kubectl get secret cloudsql-db-credentials
         kubectl get secret cloudsql-instance-credentials
@@ -76,11 +82,11 @@ steps:
         fi
 
   # Get the External IP address
-  - name: 'gcr.io/cloud-builders/kubectl'
-    id: 'get-external-ip'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "get-external-ip"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
         if [ -n "$EXTERNAL_IP" ]; then
@@ -91,11 +97,11 @@ steps:
         fi
 
   # Test: Verify PVC creation
-  - name: 'gcr.io/cloud-builders/kubectl'
-    id: 'test-pvc'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-pvc"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         kubectl get pvc wordpress-persistent-storage
         if [ $? -eq 0 ]; then
@@ -105,15 +111,15 @@ steps:
           exit 1
         fi
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Test: Verify WordPress deployment
-  - name: 'gcr.io/cloud-builders/kubectl'
-    id: 'test-deployment'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-deployment"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         kubectl rollout status deployment/wordpress --timeout=300s
         if [ $? -eq 0 ]; then
@@ -123,15 +129,15 @@ steps:
           exit 1
         fi
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Test: Verify WordPress service and get External IP
-  - name: 'gcr.io/cloud-builders/kubectl'
-    id: 'test-service-and-get-ip'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-service-and-get-ip"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         kubectl get service wordpress
         if [ $? -eq 0 ]; then
@@ -153,15 +159,15 @@ steps:
           exit 1
         fi
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Test: Basic HTTP check
-  - name: 'gcr.io/cloud-builders/curl'
-    id: 'test-http'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/curl"
+    id: "test-http"
+    entrypoint: "bash"
     args:
-      - '-c'
+      - "-c"
       - |
         EXTERNAL_IP=$(cat /workspace/external_ip.txt)
         for i in {1..30}; do
@@ -176,24 +182,23 @@ steps:
         echo "WordPress did not become ready in time"
         exit 1
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Clean up the key file
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'cleanup'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "cleanup"
+    entrypoint: "bash"
     args:
-      - '-c'
-      - 'shred -u key.json'
+      - "-c"
+      - "shred -u key.json"
 
 availableSecrets:
   secretManager:
     versionName: projects/${PROJECT_ID}/secrets/wordpress-db-password/versions/latest
-    env: '_DB_PASSWORD'
+    env: "_DB_PASSWORD"
 
 options:
-  substitution_option: 'ALLOW_LOOSE'
+  substitution_option: "ALLOW_LOOSE"
   logging: CLOUD_LOGGING_ONLY
-
 #serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
