@@ -1,12 +1,17 @@
 # cloudbuild.yaml
 
 steps:
+# Fetch the Cloud SQL proxy key from GCS
+- name: 'gcr.io/cloud-builders/gsutil'
+  id: 'fetch-key'
+  args: ['cp', 'gs://wordpress-sigma-436504-wordpress-content/key.json', 'key.json']
+
 # Deploy WordPress PVC
 - name: 'gcr.io/cloud-builders/kubectl'
   args: ['apply', '-f', 'k8s/wordpress-volumeclaim.yaml']
   env:
-  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
-  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Create CloudSQL credentials secret
 - name: 'gcr.io/cloud-builders/kubectl'
@@ -18,8 +23,8 @@ steps:
   - '--from-literal=username=wordpress'
   - '--from-literal=password=${_DB_PASSWORD}'
   env:
-  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
-  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Create CloudSQL instance credentials secret
 - name: 'gcr.io/cloud-builders/kubectl'
@@ -28,34 +33,44 @@ steps:
   - 'secret'
   - 'generic'
   - 'cloudsql-instance-credentials'
-  - '--from-file=key.json=${_CLOUDSQL_KEY_PATH}'
+  - '--from-file=key.json=key.json'
   env:
-  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
-  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Deploy WordPress deployment
 - name: 'gcr.io/cloud-builders/kubectl'
   args: ['apply', '-f', 'k8s/wordpress-deployment.yaml']
   env:
-  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
-  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
 # Deploy WordPress service
 - name: 'gcr.io/cloud-builders/kubectl'
   args: ['apply', '-f', 'k8s/wordpress-service.yaml']
   env:
-  - 'CLOUDSDK_COMPUTE_ZONE=${_ZONE}'
-  - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+  - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
+
+# Clean up the key file
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'cleanup'
+  entrypoint: 'sh'
+  args:
+  - '-c'
+  - 'shred -u key.json'
 
 substitutions:
-  _ZONE: us-central1-a
-  _CLUSTER_NAME: wordpress-cluster
-  _DB_PASSWORD: ${DB_PASSWORD}
-  _CLOUDSQL_KEY_PATH: /path/to/cloudsql/key.json
+  _DB_PASSWORD: ${_DB_PASSWORD}
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/${PROJECT_ID}/secrets/wordpress-db-password/versions/latest
+    env: '_DB_PASSWORD'
 
 options:
   substitution_option: 'ALLOW_LOOSE'
-
+  
   #bucket
 options:
   logging: GCS_ONLY
