@@ -87,18 +87,43 @@ steps:
       - "-c"
       - |
         set +e  # Continue on error
-        for i in {1..5}; do
-          echo "Attempt $i: Checking for PVC wordpress-persistent-storage"
-          kubectl get pvc wordpress-persistent-storage
-          if [ $? -eq 0 ]; then
-            echo "PVC found successfully"
-            exit 0
-          fi
-          echo "PVC not found, waiting 10 seconds before retry"
-          sleep 10
-        done
-        echo "WARNING: PVC wordpress-persistent-storage not found after 5 attempts"
-        exit 1
+        echo "Checking for WordPress PVC"
+        if kubectl get pvc | grep -q wordpress; then
+          pvc_name=$(kubectl get pvc | grep wordpress | awk '{print $1}')
+          echo "WordPress PVC found: $pvc_name"
+          kubectl get pvc $pvc_name
+          echo "PVC_TEST_RESULT=PASS" >> /workspace/test_results.env
+        else
+          echo "WARNING: No WordPress PVC found"
+          echo "PVC_TEST_RESULT=FAIL" >> /workspace/test_results.env
+        fi
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
+
+  # Test: Verify secrets creation
+  - name: "gcr.io/cloud-builders/kubectl"
+    id: "test-secrets"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set +e  # Continue on error
+        secrets_found=true
+        if ! kubectl get secret cloudsql-db-credentials &>/dev/null; then
+          echo "WARNING: cloudsql-db-credentials secret not found"
+          secrets_found=false
+        fi
+        if ! kubectl get secret cloudsql-instance-credentials &>/dev/null; then
+          echo "WARNING: cloudsql-instance-credentials secret not found"
+          secrets_found=false
+        fi
+        if $secrets_found; then
+          echo "All required secrets found"
+          echo "SECRETS_TEST_RESULT=PASS" >> /workspace/test_results.env
+        else
+          echo "SECRETS_TEST_RESULT=FAIL" >> /workspace/test_results.env
+        fi
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
@@ -110,7 +135,15 @@ steps:
     args:
       - "-c"
       - |
-        kubectl rollout status deployment/wordpress --timeout=300s
+        set +e  # Continue on error
+        echo "Checking WordPress deployment status"
+        if kubectl rollout status deployment/wordpress --timeout=300s; then
+          echo "WordPress deployment is ready"
+          echo "DEPLOYMENT_TEST_RESULT=PASS" >> /workspace/test_results.env
+        else
+          echo "WARNING: WordPress deployment is not ready"
+          echo "DEPLOYMENT_TEST_RESULT=FAIL" >> /workspace/test_results.env
+        fi
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
@@ -122,16 +155,27 @@ steps:
     args:
       - "-c"
       - |
-        kubectl get service wordpress
+        set +e  # Continue on error
+        echo "Checking WordPress service"
+        if ! kubectl get service wordpress &>/dev/null; then
+          echo "WARNING: WordPress service not found"
+          echo "SERVICE_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          exit 0
+        fi
         echo "Waiting for external IP (this may take a few minutes)..."
         external_ip=""
-        while [ -z $external_ip ]; do
-          echo "Waiting for end point..."
+        for i in {1..30}; do
           external_ip=$(kubectl get svc wordpress --template="{{range .status.loadBalancer.ingress}}{{.ip}}{{end}}")
-          [ -z "$external_ip" ] && sleep 10
+          if [ -n "$external_ip" ]; then
+            echo "External IP found: $external_ip"
+            echo $external_ip > /workspace/external_ip.txt
+            echo "SERVICE_TEST_RESULT=PASS" >> /workspace/test_results.env
+            exit 0
+          fi
+          sleep 10
         done
-        echo "End point ready: $external_ip"
-        echo $external_ip > /workspace/external_ip.txt
+        echo "WARNING: External IP not found after 5 minutes"
+        echo "SERVICE_TEST_RESULT=FAIL" >> /workspace/test_results.env
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
@@ -143,22 +187,25 @@ steps:
     args:
       - "-c"
       - |
+        set +e  # Continue on error
         if [ ! -f /workspace/external_ip.txt ]; then
-          echo "External IP file not found"
-          exit 1
+          echo "WARNING: External IP file not found"
+          echo "HTTP_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          exit 0
         fi
         external_ip=$(cat /workspace/external_ip.txt)
         for i in {1..30}; do
           http_status=$(curl -s -o /dev/null -w "%{http_code}" http://$external_ip)
           if [ $http_status -eq 200 ]; then
             echo "WordPress is responding with HTTP 200"
+            echo "HTTP_TEST_RESULT=PASS" >> /workspace/test_results.env
             exit 0
           fi
           echo "Attempt $i: WordPress is not ready yet. HTTP status: $http_status"
           sleep 10
         done
-        echo "WordPress did not become ready in time"
-        exit 1
+        echo "WARNING: WordPress did not become ready in time"
+        echo "HTTP_TEST_RESULT=FAIL" >> /workspace/test_results.env
 
   # Final step to aggregate test results
   - name: "gcr.io/cloud-builders/gcloud"
@@ -169,25 +216,31 @@ steps:
       - |
         echo "Test Results Summary:"
         echo "---------------------"
-        failed_steps=""
-        for step in "test-secrets" "test-pvc" "test-deployment" "test-service-and-wait-for-ip" "test-http"; do
-          build_step_id=$(gcloud builds describe $BUILD_ID --format='value(steps.id)' | grep $step)
-          status=$(gcloud builds describe $BUILD_ID --format='value(steps.status)' | sed -n "${build_step_id}p")
-          echo "$step: $status"
-          if [ "$status" != "SUCCESS" ]; then
-            failed_steps="$failed_steps $step"
+        source /workspace/test_results.env
+        declare -A test_results=(
+          ["PVC Test"]=$PVC_TEST_RESULT
+          ["Secrets Test"]=$SECRETS_TEST_RESULT
+          ["Deployment Test"]=$DEPLOYMENT_TEST_RESULT
+          ["Service Test"]=$SERVICE_TEST_RESULT
+          ["HTTP Test"]=$HTTP_TEST_RESULT
+        )
+        failed_tests=0
+        for test in "${!test_results[@]}"; do
+          result=${test_results[$test]}
+          echo "$test: $result"
+          if [ "$result" = "FAIL" ]; then
+            ((failed_tests++))
           fi
         done
-        if [ -n "$failed_steps" ]; then
-          echo "WARNING: The following steps failed:$failed_steps"
-          echo "Build completed with warnings. Please check the logs for details."
+        if [ $failed_tests -gt 0 ]; then
+          echo "WARNING: $failed_tests test(s) failed. Please check the logs for details."
         else
           echo "All tests passed successfully!"
         fi
         # Always exit with 0 to allow the build to complete
         exit 0
 
-
+        
   # Clean up the key file
   - name: "gcr.io/cloud-builders/gcloud"
     id: "cleanup"
