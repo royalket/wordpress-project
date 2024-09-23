@@ -59,6 +59,37 @@ steps:
   - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
   - 'CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster'
 
+# Test: Verify secrets creation
+- name: 'gcr.io/cloud-builders/kubectl'
+  id: 'test-secrets'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      kubectl get secret cloudsql-db-credentials
+      kubectl get secret cloudsql-instance-credentials
+      if [ $? -eq 0 ]; then
+        echo "Secrets exist"
+      else
+        echo "Secrets do not exist"
+        exit 1
+      fi
+
+# Get the External IP address
+- name: 'gcr.io/cloud-builders/kubectl'
+  id: 'get-external-ip'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+      if [ -n "$EXTERNAL_IP" ]; then
+        echo "External IP: $EXTERNAL_IP"
+        echo $EXTERNAL_IP > /workspace/external_ip.txt
+      else
+        echo "External IP not assigned yet"
+      fi
+
 # Test: Verify PVC creation
 - name: 'gcr.io/cloud-builders/kubectl'
   id: 'test-pvc'
