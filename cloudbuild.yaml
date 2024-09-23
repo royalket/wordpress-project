@@ -79,7 +79,7 @@ steps:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
-  # Test: Verify PVC creation
+ # Test: Verify PVC creation
   - name: "gcr.io/cloud-builders/kubectl"
     id: "test-pvc"
     entrypoint: "bash"
@@ -92,10 +92,10 @@ steps:
           pvc_name=$(kubectl get pvc | grep wordpress | awk '{print $1}')
           echo "WordPress PVC found: $pvc_name"
           kubectl get pvc $pvc_name
-          echo "PVC_TEST_RESULT=PASS" >> /workspace/test_results.env
+          echo "PVC_TEST=PASS" > /workspace/pvc_test_result.txt
         else
           echo "WARNING: No WordPress PVC found"
-          echo "PVC_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          echo "PVC_TEST=FAIL" > /workspace/pvc_test_result.txt
         fi
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
@@ -120,9 +120,9 @@ steps:
         fi
         if $secrets_found; then
           echo "All required secrets found"
-          echo "SECRETS_TEST_RESULT=PASS" >> /workspace/test_results.env
+          echo "SECRETS_TEST=PASS" > /workspace/secrets_test_result.txt
         else
-          echo "SECRETS_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          echo "SECRETS_TEST=FAIL" > /workspace/secrets_test_result.txt
         fi
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
@@ -139,10 +139,10 @@ steps:
         echo "Checking WordPress deployment status"
         if kubectl rollout status deployment/wordpress --timeout=300s; then
           echo "WordPress deployment is ready"
-          echo "DEPLOYMENT_TEST_RESULT=PASS" >> /workspace/test_results.env
+          echo "DEPLOYMENT_TEST=PASS" > /workspace/deployment_test_result.txt
         else
           echo "WARNING: WordPress deployment is not ready"
-          echo "DEPLOYMENT_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          echo "DEPLOYMENT_TEST=FAIL" > /workspace/deployment_test_result.txt
         fi
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
@@ -159,7 +159,7 @@ steps:
         echo "Checking WordPress service"
         if ! kubectl get service wordpress &>/dev/null; then
           echo "WARNING: WordPress service not found"
-          echo "SERVICE_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          echo "SERVICE_TEST=FAIL" > /workspace/service_test_result.txt
           exit 0
         fi
         echo "Waiting for external IP (this may take a few minutes)..."
@@ -169,13 +169,13 @@ steps:
           if [ -n "$external_ip" ]; then
             echo "External IP found: $external_ip"
             echo $external_ip > /workspace/external_ip.txt
-            echo "SERVICE_TEST_RESULT=PASS" >> /workspace/test_results.env
+            echo "SERVICE_TEST=PASS" > /workspace/service_test_result.txt
             exit 0
           fi
           sleep 10
         done
         echo "WARNING: External IP not found after 5 minutes"
-        echo "SERVICE_TEST_RESULT=FAIL" >> /workspace/test_results.env
+        echo "SERVICE_TEST=FAIL" > /workspace/service_test_result.txt
     env:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
@@ -190,7 +190,7 @@ steps:
         set +e  # Continue on error
         if [ ! -f /workspace/external_ip.txt ]; then
           echo "WARNING: External IP file not found"
-          echo "HTTP_TEST_RESULT=FAIL" >> /workspace/test_results.env
+          echo "HTTP_TEST=FAIL" > /workspace/http_test_result.txt
           exit 0
         fi
         external_ip=$(cat /workspace/external_ip.txt)
@@ -198,14 +198,14 @@ steps:
           http_status=$(curl -s -o /dev/null -w "%{http_code}" http://$external_ip)
           if [ $http_status -eq 200 ]; then
             echo "WordPress is responding with HTTP 200"
-            echo "HTTP_TEST_RESULT=PASS" >> /workspace/test_results.env
+            echo "HTTP_TEST=PASS" > /workspace/http_test_result.txt
             exit 0
           fi
           echo "Attempt $i: WordPress is not ready yet. HTTP status: $http_status"
           sleep 10
         done
         echo "WARNING: WordPress did not become ready in time"
-        echo "HTTP_TEST_RESULT=FAIL" >> /workspace/test_results.env
+        echo "HTTP_TEST=FAIL" > /workspace/http_test_result.txt
 
   # Final step to aggregate test results
   - name: "gcr.io/cloud-builders/gcloud"
@@ -216,19 +216,12 @@ steps:
       - |
         echo "Test Results Summary:"
         echo "---------------------"
-        source /workspace/test_results.env
-        declare -A test_results=(
-          ["PVC Test"]=$PVC_TEST_RESULT
-          ["Secrets Test"]=$SECRETS_TEST_RESULT
-          ["Deployment Test"]=$DEPLOYMENT_TEST_RESULT
-          ["Service Test"]=$SERVICE_TEST_RESULT
-          ["HTTP Test"]=$HTTP_TEST_RESULT
-        )
         failed_tests=0
-        for test in "${!test_results[@]}"; do
-          result=${test_results[$test]}
-          echo "$test: $result"
-          if [ "$result" = "FAIL" ]; then
+        for test_file in /workspace/*_test_result.txt; do
+          test_name=$(basename $test_file _test_result.txt | tr '[:lower:]' '[:upper:]')
+          test_result=$(cat $test_file | cut -d'=' -f2)
+          echo "$test_name Test: $test_result"
+          if [ "$test_result" = "FAIL" ]; then
             ((failed_tests++))
           fi
         done
@@ -240,7 +233,7 @@ steps:
         # Always exit with 0 to allow the build to complete
         exit 0
 
-        
+
   # Clean up the key file
   - name: "gcr.io/cloud-builders/gcloud"
     id: "cleanup"
