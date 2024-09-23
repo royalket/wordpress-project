@@ -9,6 +9,29 @@ This project sets up a WordPress installation on Google Kubernetes Engine (GKE) 
 - Terraform installed (version 0.12+)
 - Git
 
+## Reasons i have chosed Kubernetes and cloud SQL 
+
+### Scalability and Flexibility
+-Horizontal scaling
+-Containerization
+-Microservices architecture
+### Improved Reliability and Fault Tolerance
+-Self-healing
+-Load balancing
+-Declarative configuration
+### Enhanced Management and Automation
+-Centralized management
+-Automation
+-Version control
+### Cost Efficiency
+-Optimized resource utilization
+-Auto-scaling
+-Managed services
+### Security and Compliance
+-Role-based access control (RBAC)
+-Network policies
+-Compliance
+
 ## Project Structure
 
 ```
@@ -235,7 +258,6 @@ gcloud container clusters get-credentials wordpress-cluster --zone us-central1-a
         done
         echo "WordPress did not become ready in time"
         exit 1
-
 
 ## same can be deployed using compute engine(EC2) and cloud SQL 
 Code is available in compute+Sql folder with readme
