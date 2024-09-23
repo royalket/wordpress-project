@@ -156,6 +156,10 @@ steps:
     args:
       - "-c"
       - |
+        if [ ! -f /workspace/external_ip.txt ]; then
+          echo "External IP file not found"
+          exit 1
+        fi
         EXTERNAL_IP=$(cat /workspace/external_ip.txt)
         for i in {1..30}; do
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EXTERNAL_IP)
