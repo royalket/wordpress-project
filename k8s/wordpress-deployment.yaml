@@ -46,6 +46,7 @@ spec:
           command: ["/cloud_sql_proxy",
                     "-instances=wordpress-sigma-436504:us-central1:wordpress-db-instance=tcp:3306",
                     "-credential_file=/secrets/cloudsql/key.json"]
+          securityContext:
             runAsUser: 2  # non-root user
             allowPrivilegeEscalation: false
           volumeMounts:
