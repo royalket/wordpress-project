@@ -16,8 +16,7 @@ steps:
       - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
       - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
-
-  # # Create/Update CloudSQL credentials secret
+  # Create/Update CloudSQL credentials secret
   - name: "gcr.io/cloud-builders/kubectl"
     entrypoint: "bash"
     args:
@@ -80,21 +79,9 @@ steps:
           echo "Secrets do not exist"
           exit 1
         fi
-
-  # Get the External IP address
-  - name: "gcr.io/cloud-builders/kubectl"
-    id: "get-external-ip"
-    entrypoint: "bash"
-    args:
-      - "-c"
-      - |
-        EXTERNAL_IP=$(kubectl get service wordpress -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
-        if [ -n "$EXTERNAL_IP" ]; then
-          echo "External IP: $EXTERNAL_IP"
-          echo $EXTERNAL_IP > /workspace/external_ip.txt
-        else
-          echo "External IP not assigned yet"
-        fi
+    env:
+      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
+      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Test: Verify PVC creation
   - name: "gcr.io/cloud-builders/kubectl"
@@ -181,9 +168,6 @@ steps:
         done
         echo "WordPress did not become ready in time"
         exit 1
-    env:
-      - "CLOUDSDK_COMPUTE_ZONE=us-central1-a"
-      - "CLOUDSDK_CONTAINER_CLUSTER=wordpress-cluster"
 
   # Clean up the key file
   - name: "gcr.io/cloud-builders/gcloud"
@@ -195,10 +179,12 @@ steps:
 
 availableSecrets:
   secretManager:
-    versionName: projects/${PROJECT_ID}/secrets/wordpress-db-password/versions/latest
-    env: "_DB_PASSWORD"
+    - versionName: projects/${PROJECT_ID}/secrets/wordpress-db-password/versions/latest
+      env: "_DB_PASSWORD"
 
 options:
   substitution_option: "ALLOW_LOOSE"
   logging: CLOUD_LOGGING_ONLY
-#serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
+
+# Uncomment the following line if you need to use a specific service account
+# serviceAccount: '424615066975-compute@developer.gserviceaccount.com'
